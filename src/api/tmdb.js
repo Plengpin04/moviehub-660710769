@@ -16,25 +16,47 @@ export async function getJSON(path, params = {}) {
   }
 
   // TODO ขั้นที่ 1: ส่ง request ด้วย fetch(url) แล้วรอคำตอบ
-  //   ถ้า res.ok ไม่จริง ให้ throw new Error พร้อมเลข status
-  //   ถ้าจริง ให้คืน res.json() (อย่าลืมว่าเป็น Promise ต้อง await หรือ return ตรง ๆ)
-  throw new Error('ยังไม่ได้เขียนส่วน fetch ใน getJSON (ขั้นที่ 1)');
+  const res = await fetch(url);
+  
+  // เช็กว่าสถานะการตอบกลับตอบกลับด้วย 2xx หรือไม่ (ถ้าไม่จริง ให้ throw error พร้อม status code)
+  if (!res.ok) {
+    throw new Error(`ยิง API ไม่สำเร็จ HTTP Status: ${res.status}`);
+  }
+
+  // แปลงและคืนค่า JSON เป็น JavaScript Object
+  return await res.json();
 }
 
 // แปลง JSON ของ TMDB ให้เป็นรูปร่างเดียวกับ data.js เพื่อให้ MovieCard ใช้ได้ทันที
 // genreMap คือตาราง { 28: 'แอ็คชั่น', 16: 'แอนิเมชัน', ... } เพราะรายการหนังให้มาแค่รหัสแนว (genre_ids)
 export function toMovie(m, genreMap = {}) {
-  // TODO ขั้นที่ 2: คืน object ที่มี field เหล่านี้
-  //   id, tmdbId        มาจาก m.id
-  //   title             มาจาก m.title
-  //   titleTh           ใส่ null ไปก่อน (TMDB ให้ชื่อมาภาษาเดียวต่อ 1 request)
-  //   genre             ถ้ามี m.genres (ตอนขอรายละเอียด) ใช้ m.genres[0].name
-  //                     ถ้ามีแค่ m.genre_ids (ตอนขอรายการ) ใช้ genreMap[m.genre_ids[0]]  ทั้งคู่ต้องกัน undefined
-  //   year              ตัด 4 ตัวแรกของ m.release_date แล้วแปลงเป็นตัวเลข
-  //   rating            m.vote_average ปัดเป็นทศนิยม 1 ตำแหน่ง
-  //   detail            m.overview ถ้าว่างให้ใส่ข้อความแทน
-  //   poster            IMG + m.poster_path ถ้าไม่มีให้เป็น null
-  return m;   // ชั่วคราว: ส่งกลับตามเดิม การ์ดจะขึ้นไม่ครบเพราะชื่อ field ไม่ตรง
+  // TODO ขั้นที่ 2: คืน object ที่ตรงตามโครงสร้างของแอป MovieHub
+  
+  // จัดการเรื่องแนวหนัง (genre) เพื่อป้องกัน undefined
+  let genreName = 'ทั่วไป';
+  if (m.genres && m.genres.length > 0) {
+    genreName = m.genres[0].name;
+  } else if (m.genre_ids && m.genre_ids.length > 0) {
+    genreName = genreMap[m.genre_ids[0]] || 'ทั่วไป';
+  }
+
+  // ตัดเอาเฉพาะปี ค.ศ. (4 ตัวแรก)
+  const yearNum = m.release_date ? Number(m.release_date.slice(0, 4)) : null;
+
+  // ปัดคะแนนเรตติ้งให้เหลือทศนิยม 1 ตำแหน่ง
+  const ratingNum = m.vote_average ? Number(m.vote_average.toFixed(1)) : 0;
+
+  return {
+    id: m.id,
+    tmdbId: m.id,
+    title: m.title || 'ไม่มีชื่อเรื่อง',
+    titleTh: null,
+    genre: genreName,
+    year: yearNum,
+    rating: ratingNum,
+    detail: m.overview || 'ไม่มีข้อมูลเรื่องย่อ',
+    poster: m.poster_path ? `${IMG}${m.poster_path}` : null,
+  };
 }
 
 // ตารางแปลงรหัสแนวหนังเป็นชื่อ (โหลดครั้งเดียวต่อการเรียก getNowPlaying)
