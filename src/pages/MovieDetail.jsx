@@ -1,16 +1,56 @@
+import { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import ReviewForm from '../components/ReviewForm';
-import { movies } from '../data/data';
-// TODO ขั้นที่ 4: import { useEffect, useState } from 'react';
-// TODO ขั้นที่ 4: import { getMovie } from '../api/tmdb';
-
+import ReviewList from '../components/ReviewList';
+import MovieActions from '../components/MovieActions';
+//import { getMovie } from '../api/tmdb';
+import { getMovie } from '../api/backend';
+import { useAuth } from '../auth/AuthContext';
+// TODO ขั้นที่ 3: import { getReviews, postReview } from '../api/backend';
+import { getReviews, postReview } from '../api/backend';
 function MovieDetail() {
-  const { id } = useParams();                       // ได้เป็น string เสมอ
+  const { id } = useParams();                       // ได้เป็น string เสมอ (ตอนนี้คือรหัสของ TMDB)
+  const [movie, setMovie] = useState(null);
+  const [status, setStatus] = useState('loading');
+  const [error, setError] = useState(null);
+  const [reviews, setReviews] = useState([]);       // รีวิวจาก backend ของเรา (ไม่ใช่ TMDB)
+  const { isLoggedIn } = useAuth();                 // TODO ขั้นที่ 3: ดึง token และ member มาด้วย
+  const {token , member } = useAuth();
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      setStatus('loading');
+      try {
+        const m = await getMovie(id);
+        if (!ignore) { setMovie(m); setStatus('success'); }
+      } catch (err) {
+        if (!ignore) { setError(err); setStatus('error'); }
+      }
+    }
+    load();
+    return () => { ignore = true; };
+  }, [id]);                                          // id เปลี่ยน = โหลดเรื่องใหม่
 
-  // TODO ขั้นที่ 4: เปลี่ยนเป็น state 3 ตัว (movie, status, error) แล้วโหลดด้วย getMovie(id) ใน useEffect
-  const movie = movies.find(m => m.id === Number(id));
-  const status = movie ? 'success' : 'error';
-  const error = movie ? null : new Error('ไม่มีเรื่องนี้ใน data.js');
+  // TODO ขั้นที่ 3 (ก): เปลี่ยน effect นี้ให้โหลดรีวิวจริงจาก backend
+  //   getReviews(id) ได้ { items } แล้ว setReviews(items)  dependency คือ [id] เหมือนตัวบน
+  //   (แยกจาก effect ของ TMDB เพราะคนละ server พังคนละแบบ ไม่ควรให้รีวิวล่มแล้วหน้าทั้งหน้าพัง)
+  // โหลดรีวิวของเรื่องนี้จาก backend ของเรา แยก effect จาก TMDB เพราะคนละ server
+  useEffect(() => {
+    let ignore = false;
+    getReviews(id)
+      .then(data => { if (!ignore) setReviews(data.items); })
+      .catch(() => { if (!ignore) setReviews([]); });   // backend ล่มก็แค่ไม่มีรีวิว หน้าหนังยังดูได้
+    return () => { ignore = true; };
+  }, [id]);
+
+  // ส่งรีวิวจริง: ReviewForm เรียกฟังก์ชันนี้ตอนกดส่ง ถ้า throw ฟอร์มจะโชว์ข้อความ error เอง
+  async function handleReviewSubmit(text) {
+    const saved = await postReview(id, text, token);          // 201 ได้ { id, text, createdAt }
+    setReviews([
+      { ...saved, member: { id: member.id, displayName: member.displayName }, score: null },
+      ...reviews,                                              // ต่อหน้ารายการเดิม
+    ]);
+  }
 
   if (status === 'loading') {
     return (
@@ -53,12 +93,25 @@ function MovieDetail() {
           <h1 className="text-2xl font-semibold text-slate-900 md:text-3xl">{movie.title}</h1>
           {movie.titleTh && <p className="mt-1 text-slate-500">{movie.titleTh}</p>}
           <p className="mt-2 text-sm text-slate-500">
-            {movie.year}{movie.genre && ` | ${movie.genre}`}{movie.rating != null && ` | ⭐ ${movie.rating}`}
+            {movie.year}{movie.genre && `| ${movie.genre}`}{movie.rating != null &&`  | ⭐ ${movie.rating}`}
           </p>
           <p className="mt-4 leading-relaxed text-slate-700">{movie.detail}</p>
 
-          <div className="mt-8 rounded-xl border border-emerald-100 bg-white p-5">
-            <ReviewForm key={movie.id} movieTitle={movie.title} />
+          <MovieActions movieId={movie.id} />
+
+          <div className="mt-8">
+            <h2 className="mb-3 text-lg font-semibold text-slate-900">รีวิวจากสมาชิก ({reviews.length})</h2>
+            <ReviewList items={reviews} />
+          </div>
+
+          <div className="mt-6 rounded-xl border border-emerald-100 bg-white p-5">
+            {isLoggedIn ? (
+              <ReviewForm key={movie.id} movieTitle={movie.title} onSubmit={handleReviewSubmit} />
+            ) : (
+              <p className="text-sm text-slate-500">
+                <Link to="/login" className="text-emerald-600 hover:underline">เข้าสู่ระบบ</Link> เพื่อเขียนรีวิว
+              </p>
+            )}
           </div>
         </div>
       </div>
